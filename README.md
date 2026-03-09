@@ -1,6 +1,10 @@
+<div align="center">
+  <img src="logo.png" alt="OpenHermit" width="200" />
+
 # OpenHermit.js
 
 **Make any website discoverable and actionable by AI agents.**
+</div>
 
 OpenHermit automatically injects [WebMCP](https://webmcp.org) attributes into your website's forms and actions, making them instantly discoverable by AI agents like ChatGPT, Claude, and custom AI tools.
 
@@ -273,7 +277,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 ## Support
 
 - 📚 [Documentation](https://docs.openhermit.com)
-- 💬 [Discord Community](https://discord.gg/openhermit)
 - 🐛 [Report Issues](https://github.com/openhermit/openhermit-js/issues)
 - 📧 [Email Support](mailto:support@openhermit.com)
 

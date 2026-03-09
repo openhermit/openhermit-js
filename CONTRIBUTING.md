@@ -64,7 +64,7 @@ npm install
 
 ### Questions?
 
-Join our [Discord](https://discord.gg/openhermit) or open a discussion on GitHub.
+Open a discussion on GitHub or email support@openhermit.com.
 
 ## Code of Conduct
 

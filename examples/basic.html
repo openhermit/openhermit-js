@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenHermit - Basic Example</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    form {
+      border: 1px solid #ddd;
+      padding: 20px;
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      background: #000;
+      color: #fff;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenHermit Basic Example</h1>
+  <p>This page demonstrates OpenHermit's automatic WebMCP injection. Open your browser's DevTools and inspect the form below — you'll see <code>data-mcp-*</code> attributes automatically injected.</p>
+
+  <form id="contact-form" action="/submit" method="POST">
+    <h2>Contact Us</h2>
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required>
+
+    <label for="message">Message</label>
+    <textarea id="message" name="message" rows="5" required></textarea>
+
+    <button type="submit">Send Message</button>
+  </form>
+
+  <hr style="margin: 40px 0;">
+
+  <h3>What OpenHermit Does:</h3>
+  <ul>
+    <li>✅ Detects the form automatically</li>
+    <li>✅ Injects <code>data-mcp-action="contact_us"</code></li>
+    <li>✅ Injects <code>data-mcp-description</code> with a human-readable description</li>
+    <li>✅ Injects <code>data-mcp-params</code> with field definitions</li>
+    <li>✅ Tracks AI agent interactions (if agent detected)</li>
+    <li>✅ Serves WebMCP manifest at <code>/api/manifest</code></li>
+  </ul>
+
+  <h3>Try It:</h3>
+  <ol>
+    <li>Open DevTools (F12 or Cmd+Option+I)</li>
+    <li>Inspect the form element</li>
+    <li>Look for <code>data-mcp-*</code> attributes</li>
+    <li>Check the Console for OpenHermit logs</li>
+  </ol>
+
+  <!-- OpenHermit Script -->
+  <!-- Replace YOUR_API_KEY with your actual API key from openhermit.com -->
+  <script
+    src="../src/openhermit.js"
+    data-api-key="YOUR_API_KEY"
+    async
+  ></script>
+
+  <script>
+    // Demo: Log when form is submitted
+    document.getElementById('contact-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      alert('Form submitted! Check DevTools Console for OpenHermit tracking events.');
+      console.log('Form submitted - OpenHermit tracked this interaction');
+    });
+  </script>
+</body>
+</html>

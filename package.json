@@ -1,0 +1,44 @@
+{
+  "name": "@openhermit/js",
+  "version": "1.0.0",
+  "description": "Make any website discoverable and actionable by AI agents. WebMCP compliant client library.",
+  "main": "src/openhermit.js",
+  "types": "types/index.d.ts",
+  "files": [
+    "src/openhermit.js",
+    "types/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "echo \"Tests coming soon\" && exit 0",
+    "lint": "echo \"Linting coming soon\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openhermit/openhermit-js.git"
+  },
+  "keywords": [
+    "webmcp",
+    "ai",
+    "agents",
+    "ai-agents",
+    "chatgpt",
+    "claude",
+    "automation",
+    "forms",
+    "analytics",
+    "tracking",
+    "seo",
+    "ai-ready"
+  ],
+  "author": "OpenHermit <hello@openhermit.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/openhermit/openhermit-js/issues"
+  },
+  "homepage": "https://www.openhermit.com",
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}

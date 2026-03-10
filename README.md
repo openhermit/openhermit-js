@@ -6,7 +6,7 @@
 **Make any website discoverable and actionable by AI agents.**
 </div>
 
-OpenHermit automatically injects [WebMCP](https://webmcp.org) attributes into your website's forms and actions, making them instantly discoverable by AI agents like ChatGPT, Claude, and custom AI tools.
+OpenHermit automatically injects [WebMCP](https://webmachinelearning.github.io/webmcp/) (W3C Web Model Context Protocol) attributes into your website's forms and actions, making them instantly discoverable by AI agents like ChatGPT, Claude, and custom AI tools.
 
 Like a hermit crab finding the perfect shell — instant, automatic, perfect.
 
@@ -246,7 +246,9 @@ npm test
 
 ## WebMCP Specification
 
-OpenHermit implements the [WebMCP specification](https://webmcp.org) for AI agent discoverability.
+OpenHermit implements the [W3C Web Model Context Protocol (WebMCP)](https://webmachinelearning.github.io/webmcp/) specification for AI agent discoverability. WebMCP is an emerging W3C standard that defines how websites expose actions and capabilities to AI agents through the `navigator.modelContext` browser API and HTML data attributes.
+
+The script also registers detected forms as browser tools via `navigator.modelContext.registerTool()` when supported, making your site natively discoverable by WebMCP-compatible AI browsers.
 
 Example injected attributes:
 
@@ -274,11 +276,11 @@ Get real-time insights at [openhermit.com](https://www.openhermit.com):
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Support
+## Community & Support
 
-- 📚 [Documentation](https://docs.openhermit.com)
-- 🐛 [Report Issues](https://github.com/openhermit/openhermit-js/issues)
-- 📧 [Email Support](mailto:support@openhermit.com)
+- [Discord](https://discord.com/invite/FQQg2GBQ) — Chat, get help, share what you're building
+- [Documentation](https://docs.openhermit.com)
+- [Report Issues](https://github.com/openhermit/openhermit-js/issues)
 
 ## License
 

@@ -20,7 +20,8 @@ Like a hermit crab finding the perfect shell — instant, automatic, perfect.
 - 🎯 **Zero configuration** - Works out of the box
 - 🔧 **Customizable** - Configure agent prompts and behavior
 - 📊 **Real-time analytics** - Dashboard at [openhermit.com](https://www.openhermit.com)
-- 🚀 **Lightweight** - 19.7 KB vanilla JavaScript, zero dependencies
+- 🔌 **Dual API support** - Both Declarative (HTML attributes) and Imperative (`registerTool`) WebMCP APIs
+- 🚀 **Lightweight** - Vanilla JavaScript, zero dependencies
 
 ## Quick Start
 
@@ -107,11 +108,12 @@ If you're self-hosting the OpenHermit platform:
 OpenHermit automatically:
 
 1. **Detects forms** - Contact forms, signups, newsletters, bookings, etc.
-2. **Injects WebMCP attributes** - Adds `data-mcp-action`, `data-mcp-description`, `data-mcp-params`
-3. **Detects third-party widgets** - Calendly, Typeform, HubSpot, Intercom
-4. **Extracts business info** - Phone, email, address from Schema.org or page content
-5. **Tracks agent interactions** - Knows when AI agents visit and what they do
-6. **Serves manifest** - Provides WebMCP-compliant manifest at `/api/manifest`
+2. **Injects WebMCP Declarative attributes** - Adds `toolname`, `tooldescription`, `toolparamdescription` (W3C spec) plus `data-mcp-action`, `data-mcp-description`, `data-mcp-params` (backward compat)
+3. **Registers Imperative tools** - Calls `navigator.modelContext.registerTool()` with AbortSignal-based lifecycle (Chrome 148+)
+4. **Detects third-party widgets** - Calendly, Typeform, HubSpot, Intercom
+5. **Extracts business info** - Phone, email, address from Schema.org or page content
+6. **Tracks agent interactions** - Knows when AI agents visit and what they do, including `SubmitEvent.agentInvoked` and `toolactivated`/`toolcancel` browser events
+7. **Serves manifest** - Provides WebMCP-compliant manifest at `/api/manifest`
 
 ## Supported AI Agents
 
@@ -248,20 +250,55 @@ npm test
 
 OpenHermit implements the [W3C Web Model Context Protocol (WebMCP)](https://webmachinelearning.github.io/webmcp/) specification for AI agent discoverability. WebMCP is an emerging W3C standard that defines how websites expose actions and capabilities to AI agents through the `navigator.modelContext` browser API and HTML data attributes.
 
-The script also registers detected forms as browser tools via `navigator.modelContext.registerTool()` when supported, making your site natively discoverable by WebMCP-compatible AI browsers.
+### Declarative API
 
-Example injected attributes:
+OpenHermit injects W3C-compliant HTML attributes on detected forms:
 
 ```html
 <form
-  data-mcp-action="submit_contact_form"
-  data-mcp-description="Submit a contact form inquiry to the business"
-  data-mcp-params='[{"name":"email","type":"email","required":true},{"name":"message","type":"textarea","required":true}]'
+  toolname="submit_contact_form"
+  tooldescription="Submit a contact form inquiry to the business"
   data-openhermit="true"
 >
-  ...
+  <input type="email" name="email" toolparamdescription="Your email address" required />
+  <textarea name="message" toolparamdescription="Your message" required></textarea>
+  <button type="submit">Send</button>
 </form>
 ```
+
+### Imperative API
+
+On browsers that support `navigator.modelContext` (Chrome 146+ with flag), OpenHermit also registers tools programmatically using the AbortSignal pattern (Chrome 148+):
+
+```javascript
+// OpenHermit does this automatically for each detected form:
+const controller = new AbortController();
+navigator.modelContext.registerTool({
+  name: "submit_contact_form",
+  description: "Submit a contact form inquiry to the business",
+  inputSchema: {
+    type: "object",
+    properties: {
+      email: { type: "string", format: "email", description: "Your email address" },
+      message: { type: "string", description: "Your message" }
+    },
+    required: ["email", "message"]
+  },
+  execute: (params) => { /* fills and submits the form */ }
+}, { signal: controller.signal });
+
+// Tool is unregistered when the AbortController is aborted
+// (e.g., during SPA re-scans or page cleanup)
+controller.abort();
+```
+
+### Browser Events
+
+OpenHermit also listens for and tracks WebMCP browser events:
+
+- `toolactivated` — fired when an AI agent invokes a tool and populates form fields
+- `toolcancel` — fired when an agent or user cancels a tool invocation
+- `SubmitEvent.agentInvoked` — boolean indicating whether a form submit was agent-triggered
 
 ## Dashboard & Analytics
 

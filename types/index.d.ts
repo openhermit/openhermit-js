@@ -1,6 +1,9 @@
 /**
  * OpenHermit TypeScript Definitions
  * WebMCP-compliant AI agent discovery library
+ *
+ * Supports both the W3C WebMCP Declarative API (HTML form annotations)
+ * and the Imperative API (navigator.modelContext.registerTool with AbortSignal).
  */
 
 export interface OpenHermitConfig {
@@ -69,14 +72,93 @@ export interface BusinessInfo {
 }
 
 /**
+ * W3C WebMCP Imperative Tool Definition
+ * Used with navigator.modelContext.registerTool()
+ */
+export interface WebMCPToolDefinition {
+  /** Tool name in snake_case */
+  name: string;
+  /** Human-readable description of what the tool does */
+  description: string;
+  /** JSON Schema defining the tool's input parameters */
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, {
+      type: string;
+      description?: string;
+      format?: string;
+      enum?: string[];
+      anyOf?: Array<{ const: string; title?: string }>;
+    }>;
+    required?: string[];
+  };
+  /** Function called when an agent invokes this tool */
+  execute: (params: Record<string, any>) => string | Promise<string>;
+}
+
+/**
+ * Options for navigator.modelContext.registerTool()
+ * Chrome 148+ uses AbortSignal for tool unregistration
+ */
+export interface RegisterToolOptions {
+  /** AbortSignal — aborting this signal unregisters the tool */
+  signal?: AbortSignal;
+}
+
+/**
+ * WebMCP SubmitEvent extensions (Chrome 146+)
+ */
+export interface WebMCPSubmitEvent extends SubmitEvent {
+  /** True when the form submission was triggered by an AI agent */
+  agentInvoked?: boolean;
+  /** Pass a promise that resolves with the tool's result data */
+  respondWith?: (response: Promise<any>) => void;
+}
+
+/**
+ * WebMCP Tool Events (Chrome 146+)
+ */
+export interface ToolActivatedEvent extends Event {
+  /** Name of the tool that was activated */
+  toolName: string;
+}
+
+export interface ToolCancelEvent extends Event {
+  /** Name of the tool whose execution was cancelled */
+  toolName: string;
+}
+
+/**
+ * navigator.modelContext API (Chrome 146+ with WebMCP flag)
+ */
+export interface ModelContext {
+  /** Register a tool for AI agent discovery */
+  registerTool(tool: WebMCPToolDefinition, options?: RegisterToolOptions): void;
+  /**
+   * @deprecated Removed in Chrome 148. Use AbortSignal instead.
+   * Kept for transition compatibility only.
+   */
+  unregisterTool?(toolName: string): void;
+}
+
+/**
  * OpenHermit namespace
  */
 declare global {
+  interface Navigator {
+    modelContext?: ModelContext;
+  }
+
   interface Window {
     OpenHermit?: {
       version: string;
       config: OpenHermitConfig;
     };
+  }
+
+  interface WindowEventMap {
+    'toolactivated': ToolActivatedEvent;
+    'toolcancel': ToolCancelEvent;
   }
 }
 

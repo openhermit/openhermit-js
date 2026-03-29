@@ -1,7 +1,11 @@
 /**
- * OpenHermit v1.0
+ * OpenHermit v1.1.0
  * Makes any website discoverable and actionable by AI agents.
  * WebMCP compliant — https://openhermit.com
+ *
+ * Implements both the W3C WebMCP Declarative API (HTML form annotations)
+ * and the Imperative API (navigator.modelContext.registerTool) with
+ * AbortSignal-based unregistration (Chrome 148+).
  */
 (function (window, document) {
   'use strict';
@@ -14,7 +18,7 @@
 
   var API_KEY = SCRIPT_TAG.getAttribute('data-api-key');
   var API_BASE = SCRIPT_TAG.getAttribute('data-api-base') || 'https://www.openhermit.com';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   if (!API_KEY) {
     console.warn('[OpenHermit] No data-api-key found on script tag.');
@@ -119,12 +123,22 @@
   };
 
   function guessFormType(form, fields) {
-    var text = (form.innerHTML + (form.getAttribute('action') || '') + (form.id || '') + (form.className || '')).toLowerCase();
+    // Weight action attribute, id, and class more heavily than innerHTML
+    var highSignal = ((form.getAttribute('action') || '') + ' ' + (form.id || '') + ' ' + (form.className || '')).toLowerCase();
     for (var type in FORM_TYPE_SIGNALS) {
-      if (FORM_TYPE_SIGNALS[type].test(text)) return type;
+      if (FORM_TYPE_SIGNALS[type].test(highSignal)) return type;
     }
-    // Check field names
+    // Check field names (second priority)
     var fieldText = fields.map(function (f) { return f.name; }).join(' ');
+    for (var type2 in FORM_TYPE_SIGNALS) {
+      if (FORM_TYPE_SIGNALS[type2].test(fieldText)) return type2;
+    }
+    // Fall back to innerHTML (lowest priority, most prone to false positives)
+    var text = form.innerHTML.toLowerCase();
+    for (var type3 in FORM_TYPE_SIGNALS) {
+      if (FORM_TYPE_SIGNALS[type3].test(text)) return type3;
+    }
+    // Default heuristics
     if (/email/i.test(fieldText) && /message|body|content/i.test(fieldText)) return 'contact_form';
     if (/email/i.test(fieldText) && fields.length <= 2) return 'newsletter';
     return 'contact_form';
@@ -193,6 +207,45 @@
       support:      'Submit a support request or ticket',
     };
     return descriptions[type] || 'Submit the ' + name + ' form';
+  }
+
+  // ─── JSON Schema Builder (for imperative registerTool) ─────────────────
+  function buildInputSchema(fields) {
+    var properties = {};
+    var required = [];
+    fields.forEach(function (field) {
+      var prop = { type: 'string' };
+      if (field.label) prop.description = field.label;
+
+      // Map HTML input types to JSON Schema types
+      if (field.type === 'number' || field.type === 'range') {
+        prop.type = 'number';
+      } else if (field.type === 'checkbox') {
+        prop.type = 'boolean';
+      } else if (field.type === 'email') {
+        prop.type = 'string';
+        prop.format = 'email';
+      } else if (field.type === 'url') {
+        prop.type = 'string';
+        prop.format = 'uri';
+      } else if (field.type === 'date') {
+        prop.type = 'string';
+        prop.format = 'date';
+      } else if (field.type === 'tel') {
+        prop.type = 'string';
+        prop.format = 'phone';
+      }
+
+      properties[field.name] = prop;
+      if (field.required) required.push(field.name);
+    });
+
+    var schema = {
+      type: 'object',
+      properties: properties,
+    };
+    if (required.length > 0) schema.required = required;
+    return schema;
   }
 
   // ─── Third-Party Widget Detection ─────────────────────────────────────────
@@ -320,9 +373,9 @@
     return info;
   }
 
-  // ─── WebMCP Attribute Injection ───────────────────────────────────────────
+  // ─── WebMCP Declarative API — Attribute Injection ─────────────────────────
   function injectWebMCPOnForm(form, action) {
-    // OpenHermit proprietary attributes (current)
+    // OpenHermit proprietary attributes (backward compat)
     form.setAttribute('data-mcp-action', action.tool_name);
     form.setAttribute('data-mcp-description', action.tool_description);
     if (action.fields && action.fields.length > 0) {
@@ -331,7 +384,7 @@
     form.setAttribute('data-openhermit', 'true');
     form.setAttribute('data-openhermit-id', action.id || '');
 
-    // W3C WebMCP spec attributes (Chrome-native, forward-compatible)
+    // W3C WebMCP Declarative API attributes
     // https://webmachinelearning.github.io/webmcp/
     form.setAttribute('toolname', action.tool_name);
     form.setAttribute('tooldescription', action.tool_description);
@@ -351,6 +404,88 @@
         }
       });
     }
+  }
+
+  // ─── WebMCP Imperative API — registerTool with AbortSignal ────────────────
+  // Tracks AbortControllers keyed by tool_name for cleanup during re-scans
+  var toolControllers = {};
+
+  function supportsImperativeAPI() {
+    return !!(navigator.modelContext && typeof navigator.modelContext.registerTool === 'function');
+  }
+
+  function registerImperativeTool(action, form) {
+    if (!supportsImperativeAPI()) return;
+
+    try {
+      // Abort any previous registration for this tool_name (prevents duplicates on re-scan)
+      if (toolControllers[action.tool_name]) {
+        toolControllers[action.tool_name].abort();
+      }
+
+      var controller = new AbortController();
+      toolControllers[action.tool_name] = controller;
+
+      var toolDef = {
+        name: action.tool_name,
+        description: action.tool_description,
+        inputSchema: action.fields ? buildInputSchema(action.fields) : { type: 'object', properties: {} },
+        execute: function (params) {
+          try {
+            // Fill form fields with the provided params
+            if (form && action.fields) {
+              action.fields.forEach(function (field) {
+                if (params[field.name] !== undefined) {
+                  var input = form.querySelector('[name="' + field.name + '"]') ||
+                              form.querySelector('#' + field.name);
+                  if (input) {
+                    input.value = params[field.name];
+                    // Dispatch input event so frameworks (React, Vue) pick up the change
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                  }
+                }
+              });
+            }
+
+            // Track the interaction
+            if (detectedAgent) {
+              trackEvent('interaction', action.tool_name, {
+                source: 'imperative_api',
+                params: params,
+              });
+            }
+
+            return 'Form "' + action.name + '" populated with provided data. Ready for submission.';
+          } catch (e) {
+            return 'Error executing ' + action.tool_name + ': ' + e.message;
+          }
+        },
+      };
+
+      // Register with AbortSignal (Chrome 148+ pattern)
+      navigator.modelContext.registerTool(toolDef, { signal: controller.signal });
+
+      // Backward compat: also try legacy unregisterTool if available,
+      // per François' transition wrapper recommendation
+      // (no-op if unregisterTool has already been removed)
+
+    } catch (e) {
+      // Fail silently — imperative API is an enhancement, not required
+    }
+  }
+
+  function unregisterAllTools() {
+    for (var toolName in toolControllers) {
+      try {
+        // Transition wrapper: try legacy unregisterTool first, then abort
+        if (navigator.modelContext && typeof navigator.modelContext.unregisterTool === 'function') {
+          navigator.modelContext.unregisterTool(toolName);
+        }
+        toolControllers[toolName].abort();
+      } catch (e) { }
+    }
+    toolControllers = {};
   }
 
   // ─── Discoverability ──────────────────────────────────────────────────────
@@ -388,27 +523,34 @@
   }
 
   function attachFormTracking(form, toolName) {
+    // Skip if already tracked (prevents duplicate listeners on re-scan)
+    if (form.getAttribute('data-openhermit-tracked')) return;
+    form.setAttribute('data-openhermit-tracked', 'true');
+
     var submitted = false;
     form.addEventListener('submit', function (e) {
       if (submitted) return;
       submitted = true;
-      // Only track if an agent is detected — human submissions are not agent interactions
-      if (!detectedAgent) return;
-      trackEvent('interaction', toolName, { form_action: form.action });
+
+      // Track agent-invoked submissions via WebMCP SubmitEvent.agentInvoked
+      var isAgentSubmission = detectedAgent || (e.agentInvoked === true);
+      if (!isAgentSubmission) return;
+
+      trackEvent('interaction', toolName, {
+        form_action: form.action,
+        agent_invoked: e.agentInvoked || false,
+      });
 
       // Check for success after submission
-      // We listen for navigation or success messages
       setTimeout(function () {
-        // If still on same page, look for success indicators
         var successSignals = document.querySelector(
           '.success, .thank-you, [class*="success"], [class*="thankyou"], [id*="success"]'
         );
-        var eventType = successSignals ? 'completion' : 'completion'; // default to completion
+        var eventType = successSignals ? 'completion' : 'error';
         trackEvent(eventType, toolName, {});
 
         // Show agent prompt if configured
-        if (actionPrompts[toolName] && actionPrompts[toolName].success_prompt) {
-          // Inject a hidden element agents can read
+        if (actionPrompts[toolName] && actionPrompts[toolName].success_prompt && successSignals) {
           var promptEl = document.createElement('div');
           promptEl.setAttribute('data-mcp-response', 'true');
           promptEl.setAttribute('data-mcp-message', actionPrompts[toolName].success_prompt);
@@ -416,8 +558,37 @@
           promptEl.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;';
           document.body.appendChild(promptEl);
         }
+
+        // Show failure prompt if no success signals
+        if (actionPrompts[toolName] && actionPrompts[toolName].failure_prompt && !successSignals) {
+          var failEl = document.createElement('div');
+          failEl.setAttribute('data-mcp-response', 'true');
+          failEl.setAttribute('data-mcp-message', actionPrompts[toolName].failure_prompt);
+          failEl.setAttribute('aria-label', actionPrompts[toolName].failure_prompt);
+          failEl.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;';
+          document.body.appendChild(failEl);
+        }
       }, 1500);
     });
+  }
+
+  // ─── WebMCP Browser Events ────────────────────────────────────────────────
+  // Listen for toolactivated / toolcancel events (Chrome 146+)
+  function attachWebMCPEvents() {
+    try {
+      window.addEventListener('toolactivated', function (e) {
+        trackEvent('interaction', e.toolName, {
+          source: 'webmcp_toolactivated',
+        });
+      });
+
+      window.addEventListener('toolcancel', function (e) {
+        trackEvent('error', e.toolName, {
+          source: 'webmcp_toolcancel',
+          reason: 'cancelled',
+        });
+      });
+    } catch (e) { }
   }
 
   // ─── Sync with OpenHermit API ─────────────────────────────────────────────
@@ -463,24 +634,36 @@
   }
 
   // ─── Main Init ────────────────────────────────────────────────────────────
+  var initialized = false;
+  var initTimer = null;
+
   function init() {
     try {
-      // 1. Inject discoverability tags
+      // 1. Inject discoverability tags (only once)
       injectDiscoverability();
 
-      // 2. Ping immediately — confirms script is installed, regardless of forms found
-      post(API_BASE + '/api/ping', {
-        api_key: API_KEY,
-        page_url: window.location.href,
-        script_version: VERSION,
-      });
+      // 2. Ping immediately (only on first init)
+      if (!initialized) {
+        post(API_BASE + '/api/ping', {
+          api_key: API_KEY,
+          page_url: window.location.href,
+          script_version: VERSION,
+        });
+        // Attach WebMCP browser events once
+        attachWebMCPEvents();
+      }
+
+      // 3. Clean up any previously registered imperative tools before re-scan
+      unregisterAllTools();
 
       var allActions = [];
 
-      // 3. Detect native forms
+      // 4. Detect native forms
       var forms = document.querySelectorAll('form');
       forms.forEach(function (form) {
         try {
+          // Skip forms already processed (declarative attributes already set)
+          // but still re-register imperative tools (since we just unregistered all)
           var fields = extractFields(form);
           var type = guessFormType(form, fields);
           var name = guessFormName(form, type);
@@ -495,21 +678,30 @@
             fields: fields,
           };
 
-          injectWebMCPOnForm(form, action);
+          // Declarative API: inject HTML attributes (skip if already done)
+          if (!form.getAttribute('data-openhermit')) {
+            injectWebMCPOnForm(form, action);
+          }
+
+          // Imperative API: register via navigator.modelContext.registerTool
+          registerImperativeTool(action, form);
+
+          // Event tracking (attach once per form)
           attachFormTracking(form, toolName);
+
           allActions.push(action);
         } catch (e) { }
       });
 
-      // 4. Detect third-party widgets
+      // 5. Detect third-party widgets
       var widgets = detectThirdPartyWidgets();
       allActions = allActions.concat(widgets);
 
-      // 5. Extract business info
+      // 6. Extract business info
       var businessInfo = extractBusinessInfo();
 
-      // 6. Track page view (agent visit)
-      if (detectedAgent) {
+      // 7. Track page view (agent visit) — only on first init
+      if (!initialized && detectedAgent) {
         trackEvent('view', 'page_view', {
           agent: detectedAgent,
           actions_found: allActions.length,
@@ -517,15 +709,22 @@
         });
       }
 
-      // 7. Sync detected actions with our API + get prompts back
-      // Always sync (even empty) so we can confirm installation on pages without forms
+      // 8. Sync detected actions with our API + get prompts back
       syncActions(allActions.map(function (a) {
         return Object.assign({}, a, { business_info: businessInfo });
       }));
 
+      initialized = true;
+
     } catch (e) {
       // Never break the host page
     }
+  }
+
+  // Debounced init for SPA re-scans
+  function debouncedInit() {
+    if (initTimer) clearTimeout(initTimer);
+    initTimer = setTimeout(init, 500);
   }
 
   // Run when DOM is ready
@@ -538,15 +737,22 @@
   // Also run after dynamic content loads (SPAs)
   if (window.MutationObserver) {
     var observer = new MutationObserver(function (mutations) {
+      var hasNewForms = false;
       mutations.forEach(function (m) {
         m.addedNodes.forEach(function (node) {
-          if (node.nodeType === 1 && node.querySelector && node.querySelector('form')) {
-            // New forms added dynamically — re-scan
-            setTimeout(init, 500);
-            observer.disconnect();
+          if (node.nodeType === 1 && node.querySelector) {
+            // Check for new forms (not yet processed by OpenHermit)
+            if (node.tagName === 'FORM' && !node.getAttribute('data-openhermit')) {
+              hasNewForms = true;
+            } else if (node.querySelector('form:not([data-openhermit])')) {
+              hasNewForms = true;
+            }
           }
         });
       });
+      if (hasNewForms) {
+        debouncedInit();
+      }
     });
     observer.observe(document.body || document.documentElement, {
       childList: true,

@@ -332,4 +332,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Made with 🦀 by the OpenHermit team
+Developed by [loaded.ch](https://loaded.ch) | Powered by [OpenHermit](https://www.openhermit.com)

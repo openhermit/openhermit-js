@@ -544,11 +544,23 @@
   function injectDiscoverability() {
     var manifestUrl = API_BASE + '/api/manifest?key=' + API_KEY;
 
+    // Canonical WebMCP manifest served on the OpenHermit domain, keyed by the
+    // site's api-key. Agents follow <link rel="webmcp-manifest"> to fetch the
+    // machine-readable tool/policy manifest. Uses the same API base the snippet
+    // already resolved (respecting any data-api-base override).
+    var webmcpManifestUrl = API_BASE + '/api/webmcp/' + API_KEY;
+
     // WebMCP standard meta tags
     addMeta('webmcp', 'enabled');
     addMeta('ai-actions', manifestUrl);
     addMeta('ai-agent-ready', 'true');
     addMeta('openhermit', VERSION);
+
+    // WebMCP manifest discovery link + snippet version (standards-style).
+    // addLink/addMeta are idempotent (they no-op if the tag already exists),
+    // so SPA re-scans never duplicate these in <head>.
+    addLink('webmcp-manifest', webmcpManifestUrl);
+    addMeta('webmcp-version', VERSION);
 
     // Link relations
     addLink('webmcp', manifestUrl);
@@ -556,6 +568,62 @@
 
     // Open Graph for agents that read OG
     addMeta('og:ai-ready', 'true');
+  }
+
+  // ─── Site Policy / Greeting (transparent agent orientation) ───────────────
+  // Exposes any site-level policy/greeting returned by the sync response as a
+  // single, human-inspectable, clearly-labeled element in <head> and <body>.
+  // This is standards-style orientation — NOT a hidden off-screen aria-only
+  // prompt. Idempotent: replaces its own prior content instead of duplicating.
+  function exposeSitePolicy(policy, greeting) {
+    try {
+      if (!policy && !greeting) return;
+
+      // Machine-readable: a labeled <meta name="webmcp-policy"> in <head>.
+      // Upsert (not the addMeta no-op-if-present helper) so an updated policy
+      // from a later sync is reflected without stacking duplicate tags.
+      if (policy) {
+        var meta = document.querySelector('meta[name="webmcp-policy"]');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.name = 'webmcp-policy';
+          document.head.appendChild(meta);
+        }
+        meta.content = policy;
+      }
+      if (greeting) {
+        var gmeta = document.querySelector('meta[name="webmcp-greeting"]');
+        if (!gmeta) {
+          gmeta = document.createElement('meta');
+          gmeta.name = 'webmcp-greeting';
+          document.head.appendChild(gmeta);
+        }
+        gmeta.content = greeting;
+      }
+
+      // Human-inspectable: a single labeled element in the DOM. Visually
+      // muted but discoverable and readable — deliberately NOT positioned
+      // off-screen and NOT aria-only. This is orientation for agents that
+      // read rendered content, clearly marked as agent guidance.
+      var el = document.querySelector('[data-openhermit-agent-policy]');
+      if (!el) {
+        el = document.createElement('section');
+        el.setAttribute('data-openhermit-agent-policy', 'true');
+        el.setAttribute('role', 'note');
+        el.setAttribute('aria-label', 'Agent orientation (OpenHermit)');
+        // Kept in normal flow, small and unobtrusive, but fully inspectable.
+        el.style.cssText = 'font-size:11px;line-height:1.4;color:#6b7280;' +
+          'padding:8px 12px;margin:0;border-top:1px solid #e5e7eb;';
+        document.body.appendChild(el);
+      }
+      var parts = ['<strong>For AI agents (via OpenHermit):</strong> '];
+      if (greeting) parts.push('<span data-openhermit-greeting></span> ');
+      if (policy) parts.push('<span data-openhermit-policy></span>');
+      el.innerHTML = parts.join('');
+      // Assign text via textContent to avoid injecting markup from the policy.
+      if (greeting) el.querySelector('[data-openhermit-greeting]').textContent = greeting;
+      if (policy) el.querySelector('[data-openhermit-policy]').textContent = policy;
+    } catch (e) { /* never break the host page */ }
   }
 
   // ─── Event Tracking ───────────────────────────────────────────────────────
@@ -656,6 +724,17 @@
       if (xhr.readyState === 4 && xhr.status === 200) {
         try {
           var data = JSON.parse(xhr.responseText);
+
+          // Site-level agent policy / greeting (if the sync returns it).
+          // Read whatever shape the API provides — top-level fields or a
+          // nested `site` object — and no-op when absent.
+          var site = data.site || {};
+          var sitePolicy = data.site_policy || data.agent_policy || site.policy || site.agent_policy || null;
+          var siteGreeting = data.site_greeting || data.agent_greeting || site.greeting || site.agent_greeting || null;
+          if (sitePolicy || siteGreeting) {
+            exposeSitePolicy(sitePolicy, siteGreeting);
+          }
+
           // Store prompts for use during tracking
           if (data.actions) {
             data.actions.forEach(function (a) {

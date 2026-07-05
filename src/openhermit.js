@@ -26,6 +26,19 @@
   }
 
   // ─── Utilities ────────────────────────────────────────────────────────────
+  // CSS.escape with a small fallback polyfill for older environments.
+  function cssEscape(value) {
+    var str = String(value);
+    if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') {
+      return CSS.escape(str);
+    }
+    // Minimal fallback: backslash-escape any character that is not a safe
+    // identifier character. Sufficient for attribute-value and #id selectors.
+    return str.replace(/[^a-zA-Z0-9_-]/g, function (ch) {
+      return '\\' + ch;
+    });
+  }
+
   function toSnakeCase(str) {
     return str.toLowerCase()
       .replace(/[^a-z0-9\s]/g, '')
@@ -51,9 +64,9 @@
 
   function getCssSelector(el) {
     try {
-      if (el.id) return '#' + el.id;
-      if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
-      if (el.className) return el.tagName.toLowerCase() + '.' + el.className.split(' ')[0];
+      if (el.id) return '#' + cssEscape(el.id);
+      if (el.name) return el.tagName.toLowerCase() + '[name="' + cssEscape(el.name) + '"]';
+      if (el.className) return el.tagName.toLowerCase() + '.' + cssEscape(el.className.split(' ')[0]);
       return el.tagName.toLowerCase();
     } catch (e) { return el.tagName.toLowerCase(); }
   }
@@ -168,17 +181,36 @@
     return type.replace(/_/g, ' ');
   }
 
+  // Returns true if the input is sensitive and must never be exposed to agents
+  // (passwords, payment card fields, etc.). These are excluded from tool
+  // discovery entirely so their names/values are never transmitted.
+  function isSensitiveInput(input, type) {
+    // Never expose password fields
+    if (/password/i.test(type)) return true;
+
+    var autocomplete = (input.getAttribute('autocomplete') || '').toLowerCase();
+    if (/current-password|new-password|cc-number|cc-csc|cc-exp/.test(autocomplete)) return true;
+
+    // Match sensitive names/ids: password, credit card, cvv/cvc, ssn
+    var ident = ((input.name || '') + ' ' + (input.id || '')).toLowerCase();
+    if (/password|passwd|\bpwd\b|\bcc\b|card.?number|cardnum|\bcvv\b|\bcvc\b|\bssn\b/.test(ident)) return true;
+
+    return false;
+  }
+
   function extractFields(form) {
     var fields = [];
     var inputs = form.querySelectorAll('input, select, textarea');
     inputs.forEach(function (input) {
       var type = input.type || input.tagName.toLowerCase();
       if (/hidden|submit|button|reset|image/i.test(type)) return;
+      // Never extract sensitive fields (passwords, payment data, etc.)
+      if (isSensitiveInput(input, type)) return;
 
       // Find label
       var label = '';
       if (input.id) {
-        var labelEl = document.querySelector('label[for="' + input.id + '"]');
+        var labelEl = document.querySelector('label[for="' + cssEscape(input.id) + '"]');
         if (labelEl) label = labelEl.textContent.trim();
       }
       if (!label) label = input.getAttribute('aria-label') || input.placeholder || input.name || '';
@@ -432,33 +464,53 @@
         inputSchema: action.fields ? buildInputSchema(action.fields) : { type: 'object', properties: {} },
         execute: function (params) {
           try {
-            // Fill form fields with the provided params
+            // Fill form fields with the provided params.
+            // Match by name (preferred) via form.elements, falling back to an
+            // escaped attribute selector — never by id, and never unescaped.
+            var filledFieldNames = [];
             if (form && action.fields) {
               action.fields.forEach(function (field) {
                 if (params[field.name] !== undefined) {
-                  var input = form.querySelector('[name="' + field.name + '"]') ||
-                              form.querySelector('#' + field.name);
+                  var input = (form.elements && form.elements[field.name]) ||
+                              form.querySelector('[name="' + cssEscape(field.name) + '"]');
+                  // form.elements[name] can return a RadioNodeList/collection
+                  if (input && input.length !== undefined && !input.tagName) {
+                    input = input[0];
+                  }
                   if (input) {
                     input.value = params[field.name];
                     // Dispatch input event so frameworks (React, Vue) pick up the change
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
+                    filledFieldNames.push(field.name);
                   }
                 }
               });
             }
 
-            // Track the interaction
+            // Track the interaction — send field NAMES/metadata only.
+            // NEVER include the actual values the agent entered (privacy).
             if (detectedAgent) {
               trackEvent('interaction', action.tool_name, {
                 source: 'imperative_api',
-                params: params,
+                fields_filled: filledFieldNames,
               });
             }
 
-            return 'Form "' + action.name + '" populated with provided data. Ready for submission.';
+            // WebMCP-shaped result
+            return {
+              content: [{
+                type: 'text',
+                text: 'Form "' + action.name + '" populated with provided data. Ready for submission.',
+              }],
+            };
           } catch (e) {
-            return 'Error executing ' + action.tool_name + ': ' + e.message;
+            return {
+              content: [{
+                type: 'text',
+                text: 'Error executing ' + action.tool_name + ': ' + e.message,
+              }],
+            };
           }
         },
       };
@@ -527,14 +579,18 @@
     if (form.getAttribute('data-openhermit-tracked')) return;
     form.setAttribute('data-openhermit-tracked', 'true');
 
-    var submitted = false;
+    // Latch is only set once we actually decide to track an agent submission,
+    // so a human submit (or a submit that fails validation) never permanently
+    // disables tracking or blocks legitimate resubmits.
+    var tracked = false;
     form.addEventListener('submit', function (e) {
-      if (submitted) return;
-      submitted = true;
+      if (tracked) return;
 
       // Track agent-invoked submissions via WebMCP SubmitEvent.agentInvoked
       var isAgentSubmission = detectedAgent || (e.agentInvoked === true);
       if (!isAgentSubmission) return;
+
+      tracked = true;
 
       trackEvent('interaction', toolName, {
         form_action: form.action,

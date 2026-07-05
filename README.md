@@ -59,13 +59,17 @@ That's it! Your website is now agent-ready.
 npm install @openhermit/js
 ```
 
-```javascript
-import OpenHermit from '@openhermit/js';
+OpenHermit is a self-initializing script, not a module with an `init()` function.
+Reference the packaged file from a `<script>` tag and pass your key via
+`data-api-key` — the script configures itself from its own tag attributes:
 
-OpenHermit.init({
-  apiKey: 'YOUR_API_KEY',
-  apiBase: 'https://www.openhermit.com' // optional
-});
+```html
+<script
+  src="/node_modules/@openhermit/js/src/openhermit.js"
+  data-api-key="YOUR_API_KEY"
+  data-api-base="https://www.openhermit.com"
+  async
+></script>
 ```
 
 ### Self-Hosted
@@ -215,15 +219,14 @@ Add to your theme's `footer.php` or use a plugin like "Insert Headers and Footer
 
 OpenHermit uses vanilla ES5 JavaScript and works on:
 
-- ✅ Chrome/Edge (all versions)
-- ✅ Firefox (all versions)
-- ✅ Safari (all versions)
-- ✅ IE 11+ (yes, really)
+- ✅ Chrome/Edge (all modern versions)
+- ✅ Firefox (all modern versions)
+- ✅ Safari (all modern versions)
 - ✅ Mobile browsers
 
 ## Privacy & Security
 
-- **No PII collected** - Only tracks agent interactions, not user data
+- **No user-entered values collected** - Tracking events record only field names and interaction metadata, never the values an agent or user types into a form. Password, payment-card, and other sensitive inputs are excluded from tool discovery entirely.
 - **No cookies** - Fully cookieless tracking
 - **No external dependencies** - Self-contained script
 - **Open source** - Inspect the code yourself

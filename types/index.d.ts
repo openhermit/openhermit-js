@@ -92,8 +92,22 @@ export interface WebMCPToolDefinition {
     }>;
     required?: string[];
   };
-  /** Function called when an agent invokes this tool */
-  execute: (params: Record<string, any>) => string | Promise<string>;
+  /**
+   * Function called when an agent invokes this tool.
+   * Returns a WebMCP-shaped result: { content: [{ type: 'text', text: string }] }.
+   */
+  execute: (params: Record<string, any>) => WebMCPToolResult | Promise<WebMCPToolResult>;
+}
+
+/**
+ * WebMCP tool result shape returned by a tool's execute() function.
+ * See https://webmachinelearning.github.io/webmcp/
+ */
+export interface WebMCPToolResult {
+  content: Array<{
+    type: 'text';
+    text: string;
+  }>;
 }
 
 /**
@@ -142,18 +156,18 @@ export interface ModelContext {
 }
 
 /**
- * OpenHermit namespace
+ * Global augmentations.
+ *
+ * NOTE: OpenHermit ships as a side-effecting IIFE loaded via a <script> tag.
+ * It reads its configuration from the script tag's `data-api-key` /
+ * `data-api-base` attributes (via document.currentScript) and runs on load.
+ * It does NOT expose a `window.OpenHermit` object or an importable `init()`
+ * API, so no such types are declared here. The interfaces above document the
+ * shapes the library produces and the WebMCP browser APIs it relies on.
  */
 declare global {
   interface Navigator {
     modelContext?: ModelContext;
-  }
-
-  interface Window {
-    OpenHermit?: {
-      version: string;
-      config: OpenHermitConfig;
-    };
   }
 
   interface WindowEventMap {
